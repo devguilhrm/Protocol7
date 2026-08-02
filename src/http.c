@@ -46,4 +46,15 @@ void send_file(int client_fd, const char* filepath) {
 
     const char* content_type = get_content_type(filepath);
     char header[1024];
-    int header_len = snprintf(header,
+    int header_len = snprintf(header, sizeof(header),
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Type: %s\r\n"
+        "Content-Length: %ld\r\n"
+        "Connection: close\r\n"
+        "\r\n", content_type, (long)stat_buf.st_size);
+
+    write(client_fd, header, header_len);
+    off_t offset = 0;
+    sendfile(client_fd, fd, &offset, stat_buf.st_size);
+    close(fd);
+}

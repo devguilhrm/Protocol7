@@ -9,7 +9,7 @@ SRCS = $(wildcard $(SRC_DIR)/*.c)
 OBJS = $(patsubst $(SRC_DIR)/%.c, $(OBJ_DIR)/%.o, $(SRCS))
 DEPS = $(OBJS:.o=.d)
 
-.PHONY: all clean test run debug install help
+.PHONY: all clean test run debug help
 
 all: $(TARGET)
 
@@ -25,43 +25,21 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c | $(OBJ_DIR)
 $(OBJ_DIR):
 	@mkdir -p $(OBJ_DIR)
 
-# Testes
 test: $(TARGET)
-	@echo " Rodando testes..."
-	@./tests/run_tests.sh || echo "❌ Alguns testes falharam"
+	@echo "🧪 Rodando testes..."
+	@chmod +x tests/run_tests.sh
+	@./tests/run_tests.sh
 
-# Executar
 run: $(TARGET)
-	@echo " Iniciando servidor..."
+	@echo "🚀 Iniciando servidor..."
 	./$(TARGET) --config=server.toml
 
-# Debug build
-debug: CFLAGS += -g -O0 -DDEBUG
-debug: clean $(TARGET)
-
-# Limpar
 clean:
 	@echo "🧹 Limpando build..."
-	rm -rf $(OBJ_DIR) $(TARGET) test_runner
+	rm -rf $(OBJ_DIR) $(TARGET)
 	@echo "✅ Limpo!"
 
-# Instalar
-install: $(TARGET)
-	@echo " Instalando em /usr/local/bin..."
-	sudo cp $(TARGET) /usr/local/bin/
-	sudo chmod +x /usr/local/bin/$(TARGET)
-
-# Ajuda
 help:
-	@echo "Uso: make [target]"
-	@echo ""
-	@echo "Targets disponíveis:"
-	@echo "  all      - Compilar o servidor (padrão)"
-	@echo "  test     - Rodar testes"
-	@echo "  run      - Compilar e executar"
-	@echo "  debug    - Build com debug symbols"
-	@echo "  clean    - Remover arquivos de build"
-	@echo "  install  - Instalar em /usr/local/bin"
-	@echo "  help     - Mostrar esta ajuda"
+	@echo "Targets: all, clean, test, run, debug"
 
 -include $(DEPS)

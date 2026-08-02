@@ -1,4 +1,3 @@
-#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -22,6 +21,7 @@ volatile sig_atomic_t keep_running = 1;
 int listen_fd = -1;
 
 void handle_signal(int sig) {
+    (void)sig; // Suprime warning de parâmetro não usado
     keep_running = 0;
     if (listen_fd != -1) {
         close(listen_fd);
@@ -86,6 +86,14 @@ void* handle_client(void* arg) {
     if (query) *query = '\0';
 
     url_decode(path);
+
+    // SEGURANÇA: Bloquear Directory Traversal ANTES de resolver no disco
+    if (strstr(path, "..") != NULL) {
+        const char* msg = "<h1>403 Forbidden</h1>";
+        send_response(client_fd, 403, "Forbidden", "text/html", msg, strlen(msg));
+        close(client_fd);
+        return NULL;
+    }
 
     Site* matched_site = NULL;
     for (int i = 0; i < config.site_count; i++) {

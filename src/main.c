@@ -5,7 +5,7 @@
 #include "logger.h"
 
 int main(int argc, char* argv[]) {
-    if (argc != 3 || strncmp(argv[1], "--config=", 9) != 0) {
+    if (argc != 2 || strncmp(argv[1], "--config=", 9) != 0) {
         fprintf(stderr, "Uso: %s --config=<arquivo.toml>\n", argv[0]);
         return 1;
     }
