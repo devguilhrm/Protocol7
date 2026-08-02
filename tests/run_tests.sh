@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Função de limpeza: garante que o servidor seja morto ao final do script
+# Função de limpeza garante que o servidor seja morto ao final do script
 cleanup() {
     if [ ! -z "$SERVER_PID" ]; then
         kill $SERVER_PID 2>/dev/null
@@ -9,7 +9,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "🧪 Iniciando suite de testes do Hackathon HTTP/1.1"
+echo "Iniciando suite de testes do Hackathon HTTP/1.1"
 echo "=================================================="
 
 # Iniciar servidor em background
@@ -17,22 +17,22 @@ echo "=================================================="
 SERVER_PID=$!
 sleep 2 # Aguarda o socket abrir
 
-# Teste 1: Site Alpha
+# Teste 1 Site Alpha
 echo -n "Teste 1 - Site Alpha... "
 RESPONSE=$(curl -s -H "Host: alpha.com" http://127.0.0.1:9090/)
 if [[ $RESPONSE == *"Alpha"* ]]; then echo "✅ PASS"; else echo "❌ FAIL"; fi
 
-# Teste 2: Site Beta
+# Teste 2 Site Beta
 echo -n "Teste 2 - Site Beta... "
 RESPONSE=$(curl -s -H "Host: beta.com" http://127.0.0.1:9090/)
 if [[ $RESPONSE == *"Beta"* ]]; then echo "✅ PASS"; else echo "❌ FAIL"; fi
 
-# Teste 3: 404
+# Teste 3 404
 echo -n "Teste 3 - Host não configurado (404)... "
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: gamma.com" http://127.0.0.1:9090/)
 if [[ $HTTP_CODE == "404" ]]; then echo "✅ PASS"; else echo "❌ FAIL (código: $HTTP_CODE)"; fi
 
-# Teste 4: Directory Traversal (Usando URL encoding %2e=. e %2f=/ para enganar o curl)
+# Teste 4 Directory Traversal (Usando URL encoding %2e=. e %2f=/ para enganar o curl)
 echo -n "Teste 4 - Segurança (Directory Traversal)... "
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: alpha.com" "http://127.0.0.1:9090/%2e%2e%2f%2e%2e%2f%2e%2e%2fetc/passwd")
 if [[ $HTTP_CODE == "403" ]]; then echo "✅ PASS"; else echo "❌ FAIL (código: $HTTP_CODE)"; fi
