@@ -12,7 +12,6 @@
 #include "router.h"
 #include "logger.h"
 
-// Timeout in seconds for client connections (prevents slowloris-style hangs)
 #define CLIENT_TIMEOUT_SEC 10
 
 void* handle_connection(void* arg) {
@@ -21,7 +20,6 @@ void* handle_connection(void* arg) {
     Config cfg = d->cfg;
     free(d);
 
-    // Set receive timeout to avoid hanging threads on idle clients
     struct timeval tv;
     tv.tv_sec = CLIENT_TIMEOUT_SEC;
     tv.tv_usec = 0;
@@ -31,7 +29,6 @@ void* handle_connection(void* arg) {
     size_t n = 0;
     ssize_t r;
 
-    // Read until headers end
     while (n < REQ_BUF_SIZE - 1) {
         r = recv(fd, buf + n, sizeof(buf) - 1 - n, 0);
         if (r <= 0) { close(fd); return NULL; }
@@ -40,7 +37,6 @@ void* handle_connection(void* arg) {
         if (strstr(buf, "\r\n\r\n") != NULL) break;
     }
 
-    // 1. Protocol Layer
     HttpRequest req;
     memset(&req, 0, sizeof(req));
     int status = parse_request(buf, n, &req);
@@ -51,7 +47,6 @@ void* handle_connection(void* arg) {
         return NULL;
     }
 
-    // 2. Application Layer
     char final_path[PATH_MAX];
     status = route_request(&req, &cfg, final_path);
 
@@ -61,7 +56,6 @@ void* handle_connection(void* arg) {
         return NULL;
     }
 
-    // 3. I/O Layer
     log_info("GET %s %s", req.uri, req.host);
     send_file(fd, final_path);
     close(fd);

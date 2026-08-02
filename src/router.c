@@ -1,4 +1,3 @@
-#define _GNU_SOURCE
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -7,10 +6,8 @@
 #include "router.h"
 
 int route_request(const HttpRequest* req, const Config* cfg, char* out_path) {
-    // Block path traversal
     if (strstr(req->uri, "..") != NULL) return 403;
 
-    // Match Virtual Host
     const Site* site = NULL;
     for (int i = 0; i < cfg->site_count; i++) {
         if (strcmp(cfg->sites[i].host, req->host) == 0) {
@@ -20,7 +17,6 @@ int route_request(const HttpRequest* req, const Config* cfg, char* out_path) {
     }
     if (!site) return 404;
 
-    // Build and resolve path
     char fpath[MAX_PATH_LEN * 2];
     snprintf(fpath, sizeof(fpath), "%s%s", site->root, req->uri);
 
@@ -28,14 +24,12 @@ int route_request(const HttpRequest* req, const Config* cfg, char* out_path) {
     if (realpath(site->root, rroot) == NULL) return 500;
     if (realpath(fpath, out_path) == NULL) return 404;
 
-    // Verify path is within root
     size_t root_len = strlen(rroot);
     if (strncmp(out_path, rroot, root_len) != 0 || 
         (out_path[root_len] != '/' && out_path[root_len] != '\0')) {
         return 403;
     }
 
-    // Directory fallback to index.html
     struct stat st;
     if (stat(out_path, &st) == 0 && S_ISDIR(st.st_mode)) {
         size_t len = strlen(out_path);

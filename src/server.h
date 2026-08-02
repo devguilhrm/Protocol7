@@ -3,6 +3,6 @@
 
 #include "config.h"
 
-void start_server(Config* config);
+void run_server(Config* config);
 
 #endif
