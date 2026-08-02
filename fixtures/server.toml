@@ -1,4 +1,3 @@
-@"
 [server]
 listen = "127.0.0.1"
 port = 9090
@@ -10,4 +9,3 @@ root = "./fixtures/alpha"
 [[sites]]
 host = "beta.com"
 root = "./fixtures/beta"
-"@ | Set-Content -Encoding UTF8 fixtures\server.toml
