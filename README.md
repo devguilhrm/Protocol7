@@ -1,96 +1,70 @@
-# 🚀 Hackathon HTTP/1.1 — Servidor Web do Zero em C
+# HTTP/1.1 Server in C
 
-[![C](https://img.shields.io/badge/C-100%25-blue?logo=c)](https://github.com)
-[![Linux](https://img.shields.io/badge/Linux-x86__64-yellow?logo=linux)](https://www.linux.org)
-[![Build](https://img.shields.io/badge/build-passing-brightgreen)](#)
-[![Tests](https://img.shields.io/badge/tests-passing-brightgreen)](#)
-[![License](https://img.shields.io/badge/license-MIT-green)](#)
+Servidor HTTP/1.1 multi-threaded escrito em C puro. Implementa o protocolo do zero, sem uso de frameworks, bibliotecas de HTTP ou parsers externos.
 
-Um servidor HTTP/1.1 **multi-threaded**, **configurável** e de **alta performance**, escrito 100% em **C puro**, sem frameworks, sem bibliotecas de HTTP prontas e sem parsers externos.
+## Funcionalidades
 
-Desenvolvido para o **Hackathon HTTP/1.1**, este projeto demonstra domínio de fundamentos de sistemas, programação de redes em baixo nível, segurança defensiva e engenharia de software profissional.
+- Servidor TCP multi-threaded (POSIX threads).
+- Suporte ao método `GET` para arquivos estáticos.
+- Virtual Hosts baseados no cabeçalho `Host`.
+- Leitura de configuração via arquivo TOML.
+- Transferência de arquivos otimizada com `sendfile()` (Linux).
+- Proteção contra Directory Traversal (`realpath` + validação de prefixo).
+- Tratamento de sinais (`SIGINT`, `SIGTERM`) para encerramento limpo.
+- Logs de requisições e erros em `stdout` e `stderr`.
 
----
+## Estrutura do Projeto
 
-## 🏆 Requisitos do Desafio (Checklist)
-
-- [x] Aceitar conexões HTTP/1.1 sobre TCP
-- [x] Suportar o método `GET`
-- [x] Servir arquivos estáticos (HTML, CSS, JS, imagens, etc.)
-- [x] Hospedar múltiplos sites no mesmo IP/Porta (Virtual Hosts via cabeçalho `Host`)
-- [x] Utilizar arquivo de configuração `TOML`
-- [x] Funcionar em Linux x86-64
-- [x] Executar em primeiro plano (foreground)
-- [x] Produzir logs em `stdout` e `stderr`
-- [x] Encerrar corretamente ao receber `SIGINT` ou `SIGTERM`
-- [x] **Zero dependências de HTTP/Web** (tudo implementado do zero)
-
----
-
-## 🏗️ Arquitetura do Projeto
-
-```
-hackathon-http/
-├── src/                    # Código-fonte modularizado
-│   ├── main.c              # Entry point e parse de argumentos
-│   ├── config.c / .h       # Parser TOML nativo
-│   ├── http.c / .h         # Parser HTTP e builder de responses
-│   ├── server.c / .h       # Sockets, accept loop e thread handler
-│   ├── logger.c / .h       # Sistema de logs (stdout/stderr)
-│   └── utils.c / .h        # Funções auxiliares (url_decode, content-type)
-── tests/                  # Suite de testes
-│   ├── test_config.c       # Testes unitários do parser TOML
-│   └── run_tests.sh        # Script de testes de integração
-── sites/                  # Diretórios raiz dos sites virtuais
-│   ├── alpha/              # Site Alpha (tema azul)
-│   │   ├── index.html
-│   │   ├── style.css
-│   │   └── script.js
-│   └── beta/               # Site Beta (tema verde)
-│       └── index.html
-├── Makefile                # Build system com múltiplos targets
-├── server.toml             # Configuração do servidor
-├── .gitignore              # Arquivos ignorados pelo Git
-└── README.md               # Esta documentação
+```text
+.
+├── src/
+│   ├── main.c          # Entry point e parse de argumentos
+│   ├── config.c / .h   # Parser TOML nativo
+│   ├── http.c / .h     # Construção de respostas e I/O de arquivos
+│   ├── server.c / .h   # Sockets, accept loop e parsing de requisição
+│   ├── logger.c / .h   # Sistema de logs
+│   └── utils.c / .h    # Funções auxiliares (url_decode, content-type)
+├── tests/
+│   └── run_tests.sh    # Script de testes de integração
+├── fixtures/           # Arquivos para o avaliador oficial
+├── sites/              # Diretórios de exemplo para os sites
+├── Makefile            # Build system
+├── server.toml         # Configuração padrão
+└── README.md
 ```
 
----
-
-## 🚀 Como Compilar e Executar
+## Compilação e Execução
 
 ### Pré-requisitos
+- Linux x86-64
+- GCC ou Clang
+- Make
+- pthreads (libc)
 
-- **Sistema Operacional:** Linux x86-64 (Ubuntu, Debian, WSL2)
-- **Compilador:** GCC 10+ ou Clang 14+
-- **Ferramentas:** `make`, `curl` (para testes)
-
-### 1. Compilação
-
+### Build
 ```bash
 make
 ```
+Isso gera o binário `servidor` com otimizações (`-O2`) e suporte a threads (`-pthread`).
 
-Isso gerará o binário `servidor` com otimizações (`-O2`) e suporte a threads (`-pthread`).
+### Execução
+```bash
+./servidor --config=./server.toml
+```
 
-**Targets disponíveis:**
+**Saída esperada:**
+```text
+[INFO] Servidor iniciado em 127.0.0.1:9090
+```
 
-| Comando | Descrição |
-|---------|-----------|
-| `make` | Compila o servidor (padrão) |
-| `make clean` | Remove arquivos de build |
-| `make test` | Roda a suite completa de testes |
-| `make run` | Compila e executa o servidor |
-| `make debug` | Build com símbolos de debug (`-g -O0`) |
-| `make help` | Mostra ajuda dos targets |
+Para encerrar, pressione `Ctrl+C` (`SIGINT`) ou envie `SIGTERM`.
 
-### 2. Configuração
-
-Edite o arquivo `server.toml`:
+## Configuração (`server.toml`)
 
 ```toml
 [server]
 listen = "127.0.0.1"
-port = 8080
+port = 9090
 
 [[sites]]
 host = "alpha.com"
@@ -101,357 +75,35 @@ host = "beta.com"
 root = "./sites/beta"
 ```
 
-### 3. Execução
+## Testes
+
+O projeto inclui testes de integração para verificar a corretude das respostas:
 
 ```bash
-./servidor --config=./server.toml
-```
-
-**Saída esperada:**
-```
-[INFO] Servidor iniciado em 127.0.0.1:8080
-```
-
-Para encerrar, pressione `Ctrl+C` (`SIGINT`) ou envie `SIGTERM`:
-```
-[INFO] Servidor encerrado com segurança.
-```
-
----
-
-## 🧪 Testes
-
-O projeto possui **duas camadas de testes** para garantir robustez:
-
-### Testes Unitários (C puro)
-
-Testam o parser TOML isoladamente:
-
-```bash
-# Compilar e rodar testes unitários
-gcc -Isrc -o test_runner tests/test_config.c src/config.c src/logger.c
-./test_runner
-```
-
-**Saída esperada:**
-```
-Rodando testes...
-✓ Teste de config válido passou
-✓ Teste de config inválido passou
-Todos os testes passaram!
-```
-
-### Testes de Integração (Shell Script)
-
-Testam o servidor em execução com requisições HTTP reais:
-
-```bash
-# Rodar suite completa de testes
 make test
 ```
 
-Ou manualmente:
+## Detalhes de Implementação
 
-```bash
-chmod +x tests/run_tests.sh
-./tests/run_tests.sh
-```
+### Parsing de Requisição
+O servidor lê do socket em um loop até encontrar o delimitador `\r\n\r\n`, garantindo suporte a pacotes TCP fragmentados. A primeira linha é isolada e validada via `sscanf`. Os cabeçalhos são lidos linha a linha; o servidor exige exatamente um cabeçalho `Host` (retorna `400 Bad Request` se faltar ou se houver duplicidade).
 
-**O que é testado:**
+### Segurança de Arquivos
+Caminhos solicitados passam por `url_decode`. Sequências contendo `..` são rejeitadas imediatamente com `403 Forbidden`. O caminho final é resolvido com `realpath()` e comparado com o diretório raiz (`root`) do Virtual Host correspondente para garantir que o arquivo esteja estritamente dentro dos limites permitidos.
 
-| # | Teste | Resultado Esperado |
-|---|-------|-------------------|
-| 1 | Site Alpha (HTML + CSS + JS) | `200 OK` com conteúdo "Alpha" |
-| 2 | Site Beta | `200 OK` com conteúdo "Beta" |
-| 3 | Host não configurado | `404 Not Found` |
-| 4 | Método POST (não permitido) | `405 Method Not Allowed` |
-| 5 | Directory Traversal (`../../etc/passwd`) | `403 Forbidden` |
-| 6 | Arquivo inexistente | `404 Not Found` |
+### I/O e Performance
+Arquivos estáticos são servidos utilizando a syscall `sendfile()`, transferindo dados diretamente do descritor de arquivo para o socket no espaço do kernel, evitando cópias desnecessárias para o user space.
 
----
+### Concorrência
+Cada conexão TCP aceita gera uma nova thread (`pthread_create`). A estrutura de configuração é passada por valor para a thread, prevenindo race conditions. As threads são desanexadas (`pthread_detach`) para permitir a liberação automática de recursos ao finalizar.
 
-## 🌐 Como Testar no Navegador
+## Licença
 
-Para testar os Virtual Hosts no navegador, adicione ao arquivo `hosts`:
-
-**Linux/WSL:** `/etc/hosts`  
-**Windows:** `C:\Windows\System32\drivers\etc\hosts`
-
-```text
-127.0.0.1   alpha.com
-127.0.0.1   beta.com
-```
-
-Depois acesse:
-- **http://alpha.com:8080** → Site Alpha (tema azul)
-- **http://beta.com:8080** → Site Beta (tema verde)
-
----
-
-## 🛡️ Segurança Defensiva
-
-Este projeto implementa práticas de segurança de nível profissional:
-
-### 🔒 Blindagem contra Directory Traversal
-
-O servidor utiliza `realpath()` para resolver caminhos absolutos e compara rigorosamente com o `root` configurado:
-
-```c
-size_t root_len = strlen(resolved_root);
-if (strncmp(resolved_path, resolved_root, root_len) != 0 || 
-    (resolved_path[root_len] != '/' && resolved_path[root_len] != '\0')) {
-    // Retorna 403 Forbidden
-}
-```
-
-Isso impede ataques como:
-- `http://alpha.com/../../etc/passwd`
-- `http://alpha.com/../../../etc/shadow`
-- Exploração de prefixos (`/var/www/site` vs `/var/www/site-hacked`)
-
-### 🧹 Sanitização de Entrada
-
-- **URL Decode:** Converte `%20`, `+`, e caracteres especiais de forma segura
-- **Buffer Limits:** Todos os buffers têm tamanho máximo definido (`MAX_PATH_LEN`, `BUFFER_SIZE`)
-- **Host Header Parsing:** Extrai apenas o hostname, removendo porta e caracteres inválidos
-
-### 🚫 Isolamento de Diretórios
-
-- Tentativas de listar diretórios retornam `403 Forbidden`
-- Apenas arquivos existentes são servidos
-- Symlinks são resolvidos via `realpath()` antes da validação
-
----
-
-## ⚡ Performance
-
-### Zero-Copy I/O com `sendfile()`
-
-Para servir arquivos estáticos, o servidor utiliza a chamada de sistema `sendfile()` (Linux-specific):
-
-```c
-sendfile(client_fd, fd, &offset, stat_buf.st_size);
-```
-
-**Vantagens:**
-- Dados transferidos diretamente do cache do disco para o socket
-- Sem cópia para o espaço do usuário (user space)
-- Economia de ciclos de CPU e memória
-- Performance próxima ao Nginx para arquivos estáticos
-
-### Multi-Threading POSIX
-
-Cada conexão TCP aceita gera uma nova thread (`pthread_create`):
-
-- **Concorrência real:** Múltiplos clientes atendidos simultaneamente
-- **Isolamento de estado:** Configuração passada por cópia (sem race conditions)
-- **Thread detachment:** `pthread_detach()` evita vazamento de recursos
-
----
-
-## 🧠 Decisões Técnicas
-
-### Parser TOML Nativo
-
-Implementado do zero para o subconjunto exato exigido:
-- Seções `[server]` e `[[sites]]`
-- Chave-valor com suporte a strings entre aspas e valores numéricos
-- Tratamento de comentários (`#`) e linhas em branco
-- **Zero dependências externas**
-
-### Parser HTTP Manual
-
-Extração de método, URI, versão e headers via:
-- `sscanf()` para a linha de requisição
-- `strcasestr()` para encontrar o header `Host:`
-- Manipulação direta de ponteiros para performance
-
-### Sockets POSIX Crús
-
-Toda a comunicação via API nativa:
-- `socket()`, `bind()`, `listen()`, `accept()`
-- `recv()`, `write()`, `sendfile()`
-- `setsockopt()` com `SO_REUSEADDR`
-
----
-
-## 📊 Exemplos de Uso
-
-### Requisição GET simples
-
-```bash
-curl -H "Host: alpha.com" http://127.0.0.1:8080/
-```
-
-**Resposta:**
-```http
-HTTP/1.1 200 OK
-Content-Type: text/html
-Content-Length: 512
-Connection: close
-
-<!DOCTYPE html>
-<html>
-...
-```
-
-### Requisição para arquivo específico
-
-```bash
-curl -H "Host: alpha.com" http://127.0.0.1:8080/style.css
-```
-
-### Tentativa de ataque (bloqueada)
-
-```bash
-curl -v -H "Host: alpha.com" http://127.0.0.1:8080/../../etc/passwd
-```
-
-**Resposta:**
-```http
-HTTP/1.1 403 Forbidden
-Content-Type: text/html
-Content-Length: 22
-Connection: close
-
-<h1>403 Forbidden</h1>
-```
-
----
-
-## 🔧 Estrutura de Código
-
-### `src/main.c`
-Entry point do programa. Responsável por:
-- Parse de argumentos de linha de comando (`--config=`)
-- Inicialização da configuração
-- Chamada ao `start_server()`
-
-### `src/config.c`
-Parser TOML nativo. Funcionalidades:
-- Leitura linha-a-linha com `fgets()`
-- Detecção de seções (`[server]`, `[[sites]]`)
-- Parse de chave-valor com trim de espaços
-- Suporte a strings entre aspas e valores numéricos
-
-### `src/http.c`
-Protocolo HTTP. Responsável por:
-- Construção de headers HTTP (`send_response()`)
-- Servimento de arquivos com `sendfile()` (`send_file()`)
-- Detecção de Content-Type por extensão
-
-### `src/server.c`
-Camada de rede. Funcionalidades:
-- Setup de socket TCP (`socket()`, `bind()`, `listen()`)
-- Loop principal com `accept()`
-- Thread handler por conexão (`handle_client()`)
-- Tratamento de sinais (`SIGINT`, `SIGTERM`)
-- Virtual Host matching via header `Host:`
-- Validação de segurança (directory traversal)
-
-### `src/logger.c`
-Sistema de logs simples:
-- `log_info()` → stdout
-- `log_error()` → stderr
-
-### `src/utils.c`
-Funções auxiliares:
-- `url_decode()`: Decodifica URLs (%20, +, etc.)
-- `get_content_type()`: Mapeia extensões para MIME types
-
----
-
-## 📝 Logs
-
-O servidor produz logs em tempo real:
-
-```
-[INFO] Servidor iniciado em 127.0.0.1:8080
-[INFO] Served / for Host: alpha.com
-[INFO] Served /style.css for Host: alpha.com
-[INFO] Served / for Host: beta.com
-[ERROR] Falha ao fazer bind em 127.0.0.1:8080
-[INFO] Servidor encerrado com segurança.
-```
-
----
-
-## 🐛 Debugging
-
-Para build com símbolos de debug:
-
-```bash
-make debug
-```
-
-Isso compila com `-g -O0 -DDEBUG`, permitindo uso de `gdb`:
-
-```bash
-gdb ./servidor
-(gdb) run --config=./server.toml
-(gdb) break handle_client
-(gdb) continue
-```
-
----
-
-## 📈 Benchmarks (Opcional)
-
-Teste de performance com `ab` (Apache Bench):
-
-```bash
-# 1000 requisições, 100 concorrentes
-ab -n 1000 -c 100 -H "Host: alpha.com" http://127.0.0.1:8080/
-```
-
----
-
-##  Contribuindo
-
-Este projeto foi desenvolvido para o Hackathon HTTP/1.1. Sugestões de melhorias:
-
-1. **Fork** o repositório
-2. Crie uma branch: `git checkout -b feature/minha-melhoria`
-3. Commit: `git commit -m 'Adiciona suporte a HEAD'`
-4. Push: `git push origin feature/minha-melhoria`
-5. Abra um **Pull Request**
-
----
-
-## 📚 Aprendizados
-
-Este projeto demonstra:
-
-- ✅ Programação de sistemas em C puro
-- ✅ Sockets POSIX e programação de rede
-- ✅ Multi-threading com pthreads
-- ✅ Parsing de protocolos (HTTP, TOML)
-- ✅ Segurança defensiva (directory traversal, buffer overflow)
-- ✅ Performance (zero-copy I/O com sendfile)
-- ✅ Tratamento de sinais e graceful shutdown
-- ✅ Engenharia de software (modularização, testes, Makefile)
-
----
-
-## 📄 Licença
-
-Este projeto foi desenvolvido para fins educacionais e para submissão no **Hackathon HTTP/1.1**.
-
-Sinta-se livre para estudar, compilar e modificar o código.
+Este projeto foi desenvolvido para fins educacionais e para submissão no Hackathon HTTP/1.1.
 
 **Autor:** DevGuilhrm  
 **Linguagem:** C (C11 / POSIX)  
-**Ambiente Alvo:** Linux x86-64  
-**Compilador:** GCC 10+ / Clang 14+
+**Environment:** Linux x86-64
+```
 
----
-
-## 🏆 Agradecimentos
-
-- Organização do Hackathon HTTP/1.1
-- Comunidade de programação de sistemas
-- Documentação POSIX e RFC 7230 (HTTP/1.1)
-
----
-
-**Feito com paciência e muito café ☕**
+Feito com empenho e muito café ;)
