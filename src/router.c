@@ -1,4 +1,7 @@
+#define _GNU_SOURCE
+#include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include <sys/stat.h>
 #include <limits.h>
 #include "router.h"
@@ -8,7 +11,7 @@ int route_request(const HttpRequest* req, const Config* cfg, char* out_path) {
     if (strstr(req->uri, "..") != NULL) return 403;
 
     // Match Virtual Host
-    Site* site = NULL;
+    const Site* site = NULL;
     for (int i = 0; i < cfg->site_count; i++) {
         if (strcmp(cfg->sites[i].host, req->host) == 0) {
             site = &cfg->sites[i];
@@ -21,7 +24,7 @@ int route_request(const HttpRequest* req, const Config* cfg, char* out_path) {
     char fpath[MAX_PATH_LEN * 2];
     snprintf(fpath, sizeof(fpath), "%s%s", site->root, req->uri);
 
-    char rryoot[PATH_MAX];
+    char rroot[PATH_MAX];
     if (realpath(site->root, rroot) == NULL) return 500;
     if (realpath(fpath, out_path) == NULL) return 404;
 

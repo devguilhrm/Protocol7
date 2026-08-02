@@ -10,7 +10,7 @@
 int parse_http_request(const char* buf, size_t len, HttpRequest* req) {
     if (len >= REQ_BUF_SIZE - 1) return 431;
 
-    // 1. Validate Host header (requires exactly one)
+    // Validate Host header (requires exactly one)
     int n_hosts = 0;
     char* p = (char*)buf;
     char* q;
@@ -34,7 +34,7 @@ int parse_http_request(const char* buf, size_t len, HttpRequest* req) {
 
     if (n_hosts != 1) return 400;
 
-    // 2. Parse request line (copy to avoid mutating original buffer)
+    // Parse request line (copy to avoid mutating original buffer)
     char tmp_buf[REQ_BUF_SIZE];
     strncpy(tmp_buf, buf, REQ_BUF_SIZE - 1);
     tmp_buf[REQ_BUF_SIZE - 1] = '\0';
@@ -46,7 +46,7 @@ int parse_http_request(const char* buf, size_t len, HttpRequest* req) {
     if (sscanf(tmp_buf, "%15s %511s %*s", req->method, req->uri) != 2) return 400;
     if (strcmp(req->method, "GET") != 0) return 400;
 
-    // 3. Basic cleanup
+    //  Basic cleanup
     char* colon = strchr(req->host, ':');
     if (colon) *colon = '\0';
 
@@ -63,7 +63,7 @@ int resolve_secure_path(const HttpRequest* req, const Config* cfg, char* out_pat
     if (strstr(req->uri, "..") != NULL) return 403;
 
     // Lookup vhost
-    Site* site = NULL;
+    const Site* site = NULL;
     for (int i = 0; i < cfg->site_count; i++) {
         if (strcmp(cfg->sites[i].host, req->host) == 0) {
             site = &cfg->sites[i];
