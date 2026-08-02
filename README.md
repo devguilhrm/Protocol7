@@ -96,7 +96,7 @@ O projeto passa na suite de conformidade oficial do hackathon (15/15 testes). Pa
 
 1. Iniciar servidor:
 ```bash
-./servidor --config=server.toml
+./servidor --config=fixtures/server.toml
 ```
 
 2. Rodar avaliador (em outro terminal):
