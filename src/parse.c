@@ -35,7 +35,9 @@ int parse_request(const char* buf, size_t len, HttpRequest* req) {
     if (!crlf) return 400;
     *crlf = '\0';
 
-    if (sscanf(tmp, "%15s %511s %*s", req->method, req->uri) != 2) return 400;
+    char version[16];
+    if (sscanf(tmp, "%15s %511s %15s", req->method, req->uri, version) != 3) return 400;
+    
     if (strcmp(req->method, "GET") != 0) return 400;
 
     char* colon = strchr(req->host, ':');
