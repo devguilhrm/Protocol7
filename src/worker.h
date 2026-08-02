@@ -8,7 +8,6 @@ typedef struct {
     Config cfg;
 } ConnData;
 
-// Thread entry point: handles a single client connection lifecycle.
 void* handle_connection(void* arg);
 
 #endif

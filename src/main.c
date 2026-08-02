@@ -1,3 +1,4 @@
+cat << 'EOF' > src/main.c
 #include <stdio.h>
 #include <string.h>
 #include "config.h"
@@ -6,7 +7,7 @@
 
 int main(int argc, char* argv[]) {
     if (argc != 2 || strncmp(argv[1], "--config=", 9) != 0) {
-        fprintf(stderr, "Uso: %s --config=<arquivo.toml>\n", argv[0]);
+        fprintf(stderr, "Usage: %s --config=<file.toml>\n", argv[0]);
         return 1;
     }
 
@@ -14,6 +15,7 @@ int main(int argc, char* argv[]) {
     Config config;
     if (parse_config(config_file, &config) != 0) return 1;
 
-    start_server(&config);
+    run_server(&config);
     return 0;
 }
+EOF
