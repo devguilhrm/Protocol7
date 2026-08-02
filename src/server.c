@@ -21,7 +21,7 @@ volatile sig_atomic_t keep_running = 1;
 int listen_fd = -1;
 
 void handle_signal(int sig) {
-    (void)sig; // Suprime warning de parâmetro não usado
+    (void)sig;
     keep_running = 0;
     if (listen_fd != -1) {
         close(listen_fd);
@@ -41,44 +41,91 @@ void* handle_client(void* arg) {
     free(data);
 
     char buffer[BUFFER_SIZE];
-    ssize_t bytes_read = recv(client_fd, buffer, sizeof(buffer) - 1, 0);
-    if (bytes_read <= 0) {
+    size_t total_read = 0;
+    ssize_t bytes_read;
+
+    // 1. LEITURA ROBUSTA: Loop até receber \r\n\r\n (fim dos headers)
+    // Isso corrige o teste "fragmented input" e evita "Broken pipe"
+    while (total_read < BUFFER_SIZE - 1) {
+        bytes_read = recv(client_fd, buffer + total_read, sizeof(buffer) - 1 - total_read, 0);
+        if (bytes_read <= 0) {
+            close(client_fd);
+            return NULL;
+        }
+        total_read += bytes_read;
+        buffer[total_read] = '\0';
+
+        if (strstr(buffer, "\r\n\r\n") != NULL) {
+            break;
+        }
+    }
+
+    if (total_read >= BUFFER_SIZE - 1) {
+        const char* msg = "<h1>431 Request Header Fields Too Large</h1>";
+        send_response(client_fd, 431, "Request Header Fields Too Large", "text/html", msg, strlen(msg));
         close(client_fd);
         return NULL;
     }
-    buffer[bytes_read] = '\0';
 
+    // 2. VALIDAÇÃO ESTRITA DO HEADER HOST
+    int host_count = 0;
+    char req_host[MAX_PATH_LEN] = "";
+    char* line_start = buffer;
+    char* line_end;
+
+    while ((line_end = strstr(line_start, "\r\n")) != NULL) {
+        size_t line_len = line_end - line_start;
+        // Verifica se a linha começa com "Host:" (case-insensitive)
+        if (line_len >= 5 && strncasecmp(line_start, "Host:", 5) == 0) {
+            host_count++;
+            if (host_count == 1) {
+                char* val_start = line_start + 5;
+                while (val_start < line_end && (*val_start == ' ' || *val_start == '\t')) {
+                    val_start++;
+                }
+                size_t val_len = line_end - val_start;
+                if (val_len > 0 && val_len < MAX_PATH_LEN) {
+                    strncpy(req_host, val_start, val_len);
+                    req_host[val_len] = '\0';
+                }
+            }
+        }
+        line_start = line_end + 2;
+    }
+
+    // HTTP/1.1 exige EXATAMENTE UM cabeçalho Host
+    if (host_count != 1) {
+        const char* msg = "<h1>400 Bad Request</h1><p>Missing or duplicate Host header.</p>";
+        send_response(client_fd, 400, "Bad Request", "text/html", msg, strlen(msg));
+        close(client_fd);
+        return NULL;
+    }
+
+    // 3. PARSING DA LINHA DE REQUISIÇÃO
+    char* first_crlf = strstr(buffer, "\r\n");
+    if (!first_crlf) {
+        const char* msg = "<h1>400 Bad Request</h1>";
+        send_response(client_fd, 400, "Bad Request", "text/html", msg, strlen(msg));
+        close(client_fd);
+        return NULL;
+    }
+    
+    // Isola a primeira linha para o sscanf
+    char req_line_backup = *first_crlf;
+    *first_crlf = '\0';
+    
     char method[16], path[MAX_PATH_LEN], version[16];
-    if (sscanf(buffer, "%15s %511s %15s", method, path, version) != 3) {
+    int parsed = sscanf(buffer, "%15s %511s %15s", method, path, version);
+    *first_crlf = req_line_backup; // Restaura
+
+    if (parsed != 3 || strcmp(method, "GET") != 0) {
         const char* msg = "<h1>400 Bad Request</h1>";
         send_response(client_fd, 400, "Bad Request", "text/html", msg, strlen(msg));
         close(client_fd);
         return NULL;
     }
 
-    if (strcmp(method, "GET") != 0) {
-        const char* msg = "<h1>405 Method Not Allowed</h1>";
-        send_response(client_fd, 405, "Method Not Allowed", "text/html", msg, strlen(msg));
-        close(client_fd);
-        return NULL;
-    }
-
-    char req_host[MAX_PATH_LEN] = "";
-    char* host_header = strcasestr(buffer, "Host:");
-    if (host_header) {
-        host_header += 5;
-        while (isspace((unsigned char)*host_header)) host_header++;
-        char* host_end = strchr(host_header, '\r');
-        if (!host_end) host_end = strchr(host_header, '\n');
-        if (host_end) {
-            int host_len = host_end - host_header;
-            if (host_len > 0 && host_len < MAX_PATH_LEN) {
-                strncpy(req_host, host_header, host_len);
-                req_host[host_len] = '\0';
-            }
-        }
-    }
-
+    // Limpeza do Host e Path
     char* colon = strchr(req_host, ':');
     if (colon) *colon = '\0';
 
@@ -87,7 +134,7 @@ void* handle_client(void* arg) {
 
     url_decode(path);
 
-    // SEGURANÇA: Bloquear Directory Traversal ANTES de resolver no disco
+    // SEGURANÇA: Bloquear Directory Traversal
     if (strstr(path, "..") != NULL) {
         const char* msg = "<h1>403 Forbidden</h1>";
         send_response(client_fd, 403, "Forbidden", "text/html", msg, strlen(msg));
@@ -95,6 +142,7 @@ void* handle_client(void* arg) {
         return NULL;
     }
 
+    // 4. ROTEAMENTO VIRTUAL HOST
     Site* matched_site = NULL;
     for (int i = 0; i < config.site_count; i++) {
         if (strcmp(config.sites[i].host, req_host) == 0) {
