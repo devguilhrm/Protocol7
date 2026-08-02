@@ -1,0 +1,11 @@
+[server]
+listen = "127.0.0.1"
+port = 8080
+
+[[sites]]
+host = "alpha.com"
+root = "./sites/alpha"
+
+[[sites]]
+host = "beta.com"
+root = "./sites/beta"
