@@ -3,10 +3,10 @@
 echo "🧪 Iniciando suite de testes do Hackathon HTTP/1.1"
 echo "=================================================="
 
-# Iniciar servidor em background
+# Iniciar servidor em background COM O ARGUMENTO --config
 ./servidor --config=server.toml &
 SERVER_PID=$!
-sleep 1
+sleep 2  # Aumentei para 2 segundos para garantir que o servidor subiu
 
 # Teste 1: Site Alpha
 echo -n "Teste 1 - Site Alpha... "
@@ -46,6 +46,7 @@ fi
 
 # Parar servidor
 kill $SERVER_PID 2>/dev/null
+wait $SERVER_PID 2>/dev/null
 
 echo "=================================================="
 echo "✅ Suite de testes concluída!"
