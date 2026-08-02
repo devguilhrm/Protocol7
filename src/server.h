@@ -1,8 +1,8 @@
-   #ifndef SERVER_H
-   #define SERVER_H
+#ifndef SERVER_H
+#define SERVER_H
 
-   #include "config.h"
+#include "config.h"
 
-   void run_server(Config* config);
+void run_server(Config* config);
 
-   #endif
+#endif
