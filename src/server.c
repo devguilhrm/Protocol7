@@ -15,262 +15,256 @@
 #include "utils.h"
 #include "logger.h"
 
-#define BUFFER_SIZE 8192
+#define BUF_SZ 8192
 
-volatile sig_atomic_t keep_running = 1;
-int listen_fd = -1;
+volatile sig_atomic_t running = 1;
+int srv_fd = -1;
 
-void handle_signal(int sig) {
+// silence unused param warning
+void sig_handler(int sig) {
     (void)sig;
-    keep_running = 0;
-    if (listen_fd != -1) {
-        close(listen_fd);
-        listen_fd = -1;
+    running = 0;
+    if (srv_fd != -1) {
+        close(srv_fd);
+        srv_fd = -1;
     }
 }
 
 typedef struct {
-    int client_fd;
-    Config config;
-} ClientData;
+    int fd;
+    Config cfg;
+} ConnData;
 
-void* handle_client(void* arg) {
-    ClientData* data = (ClientData*)arg;
-    int client_fd = data->client_fd;
-    Config config = data->config;
-    free(data);
+void* handle_req(void* arg) {
+    ConnData* d = (ConnData*)arg;
+    int fd = d->fd;
+    Config cfg = d->cfg;
+    free(d);
 
-    char buffer[BUFFER_SIZE];
-    size_t total_read = 0;
-    ssize_t bytes_read;
+    char buf[BUF_SZ];
+    size_t n = 0;
+    ssize_t r;
 
-    // 1. LEITURA ROBUSTA: Loop até receber \r\n\r\n (fim dos headers)
-    // Isso corrige o teste "fragmented input" e evita "Broken pipe"
-    while (total_read < BUFFER_SIZE - 1) {
-        bytes_read = recv(client_fd, buffer + total_read, sizeof(buffer) - 1 - total_read, 0);
-        if (bytes_read <= 0) {
-            close(client_fd);
+    // read until headers end (\r\n\r\n)
+    while (n < BUF_SZ - 1) {
+        r = recv(fd, buf + n, sizeof(buf) - 1 - n, 0);
+        if (r <= 0) {
+            close(fd);
             return NULL;
         }
-        total_read += bytes_read;
-        buffer[total_read] = '\0';
+        n += r;
+        buf[n] = '\0';
 
-        if (strstr(buffer, "\r\n\r\n") != NULL) {
-            break;
-        }
+        if (strstr(buf, "\r\n\r\n") != NULL) break;
     }
 
-    if (total_read >= BUFFER_SIZE - 1) {
+    if (n >= BUF_SZ - 1) {
         const char* msg = "<h1>431 Request Header Fields Too Large</h1>";
-        send_response(client_fd, 431, "Request Header Fields Too Large", "text/html", msg, strlen(msg));
-        close(client_fd);
+        send_response(fd, 431, "Request Header Fields Too Large", "text/html", msg, strlen(msg));
+        close(fd);
         return NULL;
     }
 
-    // 2. VALIDAÇÃO ESTRITA DO HEADER HOST
-    int host_count = 0;
-    char req_host[MAX_PATH_LEN] = "";
-    char* line_start = buffer;
-    char* line_end;
+    // check exactly one Host header
+    int n_hosts = 0;
+    char host[MAX_PATH_LEN] = "";
+    char* p = buf;
+    char* q;
 
-    while ((line_end = strstr(line_start, "\r\n")) != NULL) {
-        size_t line_len = line_end - line_start;
-        // Verifica se a linha começa com "Host:" (case-insensitive)
-        if (line_len >= 5 && strncasecmp(line_start, "Host:", 5) == 0) {
-            host_count++;
-            if (host_count == 1) {
-                char* val_start = line_start + 5;
-                while (val_start < line_end && (*val_start == ' ' || *val_start == '\t')) {
-                    val_start++;
+    while ((q = strstr(p, "\r\n")) != NULL) {
+        size_t len = q - p;
+        if (len >= 5 && strncasecmp(p, "Host:", 5) == 0) {
+            n_hosts++;
+            if (n_hosts == 1) {
+                char* val = p + 5;
+                while (val < q && (*val == ' ' || *val == '\t')) val++;
+                size_t vlen = q - val;
+                if (vlen > 0 && vlen < MAX_PATH_LEN) {
+                    strncpy(host, val, vlen);
+                    host[vlen] = '\0';
                 }
-                size_t val_len = line_end - val_start;
-                if (val_len > 0 && val_len < MAX_PATH_LEN) {
-                    strncpy(req_host, val_start, val_len);
-                    req_host[val_len] = '\0';
-                }
+
             }
         }
-        line_start = line_end + 2;
+        p = q + 2;
     }
 
-    // HTTP/1.1 exige EXATAMENTE UM cabeçalho Host
-    if (host_count != 1) {
-        const char* msg = "<h1>400 Bad Request</h1><p>Missing or duplicate Host header.</p>";
-        send_response(client_fd, 400, "Bad Request", "text/html", msg, strlen(msg));
-        close(client_fd);
+    if (n_hosts != 1) {
+        const char* msg = "<h1>400 Bad Request</h1><p>Missing or duplicate Host.</p>";
+        send_response(fd, 400, "Bad Request", "text/html", msg, strlen(msg));
+        close(fd);
         return NULL;
     }
 
-    // 3. PARSING DA LINHA DE REQUISIÇÃO
-    char* first_crlf = strstr(buffer, "\r\n");
-    if (!first_crlf) {
+    // parse request line
+    char* crlf = strstr(buf, "\r\n");
+    if (!crlf) {
         const char* msg = "<h1>400 Bad Request</h1>";
-        send_response(client_fd, 400, "Bad Request", "text/html", msg, strlen(msg));
-        close(client_fd);
+        send_response(fd, 400, "Bad Request", "text/html", msg, strlen(msg));
+        close(fd);
         return NULL;
     }
     
-    // Isola a primeira linha para o sscanf
-    char req_line_backup = *first_crlf;
-    *first_crlf = '\0';
+    char tmp = *crlf;
+    *crlf = '\0';
     
-    char method[16], path[MAX_PATH_LEN], version[16];
-    int parsed = sscanf(buffer, "%15s %511s %15s", method, path, version);
-    *first_crlf = req_line_backup; // Restaura
+    char meth[16], uri[MAX_PATH_LEN], ver[16];
+    int ok = sscanf(buf, "%15s %511s %15s", meth, uri, ver);
+    *crlf = tmp; // restore
 
-    if (parsed != 3 || strcmp(method, "GET") != 0) {
+    if (ok != 3 || strcmp(meth, "GET") != 0) {
         const char* msg = "<h1>400 Bad Request</h1>";
-        send_response(client_fd, 400, "Bad Request", "text/html", msg, strlen(msg));
-        close(client_fd);
+        send_response(fd, 400, "Bad Request", "text/html", msg, strlen(msg));
+        close(fd);
         return NULL;
     }
 
-    // Limpeza do Host e Path
-    char* colon = strchr(req_host, ':');
+    // clean up uri and host
+    char* colon = strchr(host, ':');
     if (colon) *colon = '\0';
 
-    char* query = strchr(path, '?');
+    char* query = strchr(uri, '?');
     if (query) *query = '\0';
 
-    url_decode(path);
+    url_decode(uri);
 
-    // SEGURANÇA: Bloquear Directory Traversal
-    if (strstr(path, "..") != NULL) {
+    // block path traversal
+    if (strstr(uri, "..") != NULL) {
         const char* msg = "<h1>403 Forbidden</h1>";
-        send_response(client_fd, 403, "Forbidden", "text/html", msg, strlen(msg));
-        close(client_fd);
+        send_response(fd, 403, "Forbidden", "text/html", msg, strlen(msg));
+        close(fd);
         return NULL;
     }
 
-    // 4. ROTEAMENTO VIRTUAL HOST
-    Site* matched_site = NULL;
-    for (int i = 0; i < config.site_count; i++) {
-        if (strcmp(config.sites[i].host, req_host) == 0) {
-            matched_site = &config.sites[i];
+    // find vhost
+    Site* site = NULL;
+    for (int i = 0; i < cfg.site_count; i++) {
+        if (strcmp(cfg.sites[i].host, host) == 0) {
+            site = &cfg.sites[i];
             break;
         }
     }
 
-    if (!matched_site) {
-        const char* msg = "<h1>404 Not Found</h1><p>Host não configurado.</p>";
-        send_response(client_fd, 404, "Not Found", "text/html", msg, strlen(msg));
-        close(client_fd);
+    if (!site) {
+        const char* msg = "<h1>404 Not Found</h1><p>Host not configured.</p>";
+        send_response(fd, 404, "Not Found", "text/html", msg, strlen(msg));
+        close(fd);
         return NULL;
     }
 
-    char full_path[MAX_PATH_LEN * 2];
-    snprintf(full_path, sizeof(full_path), "%s%s", matched_site->root, path);
+    char fpath[MAX_PATH_LEN * 2];
+    snprintf(fpath, sizeof(fpath), "%s%s", site->root, uri);
 
-    char resolved_path[PATH_MAX];
-    char resolved_root[PATH_MAX];
+    char rpath[PATH_MAX];
+    char rroot[PATH_MAX];
 
-    if (realpath(matched_site->root, resolved_root) == NULL) {
+    if (realpath(site->root, rroot) == NULL) {
         const char* msg = "<h1>500 Internal Server Error</h1>";
-        send_response(client_fd, 500, "Internal Server Error", "text/html", msg, strlen(msg));
-        close(client_fd);
+        send_response(fd, 500, "Internal Server Error", "text/html", msg, strlen(msg));
+        close(fd);
         return NULL;
     }
 
-    if (realpath(full_path, resolved_path) == NULL) {
+    if (realpath(fpath, rpath) == NULL) {
         const char* msg = "<h1>404 Not Found</h1>";
-        send_response(client_fd, 404, "Not Found", "text/html", msg, strlen(msg));
-        close(client_fd);
+        send_response(fd, 404, "Not Found", "text/html", msg, strlen(msg));
+        close(fd);
         return NULL;
     }
 
-    size_t root_len = strlen(resolved_root);
-    if (strncmp(resolved_path, resolved_root, root_len) != 0 || 
-        (resolved_path[root_len] != '/' && resolved_path[root_len] != '\0')) {
+    size_t root_len = strlen(rroot);
+    if (strncmp(rpath, rroot, root_len) != 0 || 
+        (rpath[root_len] != '/' && rpath[root_len] != '\0')) {
         const char* msg = "<h1>403 Forbidden</h1>";
-        send_response(client_fd, 403, "Forbidden", "text/html", msg, strlen(msg));
-        close(client_fd);
+        send_response(fd, 403, "Forbidden", "text/html", msg, strlen(msg));
+        close(fd);
         return NULL;
     }
 
-    struct stat stat_buf;
-    if (stat(resolved_path, &stat_buf) == 0 && S_ISDIR(stat_buf.st_mode)) {
-        size_t len = strlen(resolved_path);
-        if (len + 12 < sizeof(resolved_path)) {
-            strcat(resolved_path, "/index.html");
-            if (stat(resolved_path, &stat_buf) != 0) {
+    struct stat st;
+    if (stat(rpath, &st) == 0 && S_ISDIR(st.st_mode)) {
+        size_t len = strlen(rpath);
+        if (len + 12 < sizeof(rpath)) {
+            strcat(rpath, "/index.html");
+            if (stat(rpath, &st) != 0) {
                 const char* msg = "<h1>403 Forbidden</h1><p>Directory listing not allowed.</p>";
-                send_response(client_fd, 403, "Forbidden", "text/html", msg, strlen(msg));
-                close(client_fd);
+                send_response(fd, 403, "Forbidden", "text/html", msg, strlen(msg));
+                close(fd);
                 return NULL;
             }
         }
     }
 
-    log_info("Served %s for Host: %s", path, req_host);
-    send_file(client_fd, resolved_path);
-    close(client_fd);
+    log_info("GET %s %s", uri, host);
+    send_file(fd, rpath);
+    close(fd);
     return NULL;
 }
 
-void start_server(Config* config) {
+void run_server(Config* config) {
     struct sigaction sa;
-    sa.sa_handler = handle_signal;
+    sa.sa_handler = sig_handler;
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = 0;
     sigaction(SIGINT, &sa, NULL);
     sigaction(SIGTERM, &sa, NULL);
 
-    listen_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (listen_fd == -1) {
-        log_error("Falha ao criar socket");
+    srv_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (srv_fd == -1) {
+        log_error("Failed to create socket");
         return;
     }
 
     int opt = 1;
-    setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    setsockopt(srv_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
-    struct sockaddr_in server_addr;
-    memset(&server_addr, 0, sizeof(server_addr));
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = inet_addr(config->listen);
-    server_addr.sin_port = htons(config->port);
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = inet_addr(config->listen);
+    addr.sin_port = htons(config->port);
 
-    if (bind(listen_fd, (struct sockaddr*)&server_addr, sizeof(server_addr)) == -1) {
-        log_error("Falha ao fazer bind em %s:%d", config->listen, config->port);
-        close(listen_fd);
+    if (bind(srv_fd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
+        log_error("Failed to bind on %s:%d", config->listen, config->port);
+        close(srv_fd);
         return;
     }
 
-    if (listen(listen_fd, 128) == -1) {
-        log_error("Falha ao colocar socket em modo de escuta");
-        close(listen_fd);
+    if (listen(srv_fd, 128) == -1) {
+        log_error("Failed to listen");
+        close(srv_fd);
         return;
     }
 
-    log_info("Servidor iniciado em %s:%d", config->listen, config->port);
+    log_info("Server started on %s:%d", config->listen, config->port);
 
-    while (keep_running) {
-        struct sockaddr_in client_addr;
-        socklen_t client_len = sizeof(client_addr);
-        int client_fd = accept(listen_fd, (struct sockaddr*)&client_addr, &client_len);
+    while (running) {
+        struct sockaddr_in caddr;
+        socklen_t clen = sizeof(caddr);
+        int cfd = accept(srv_fd, (struct sockaddr*)&caddr, &clen);
         
-        if (client_fd == -1) {
-            if (!keep_running) break;
+        if (cfd == -1) {
+            if (!running) break;
             continue;
         }
 
-        ClientData* data = malloc(sizeof(ClientData));
-        if (!data) {
-            close(client_fd);
+        ConnData* d = malloc(sizeof(ConnData));
+        if (!d) {
+            close(cfd);
             continue;
         }
-        data->client_fd = client_fd;
-        data->config = *config;
+        d->fd = cfd;
+        d->cfg = *config;
 
-        pthread_t thread;
-        if (pthread_create(&thread, NULL, handle_client, data) != 0) {
-            log_error("Falha ao criar thread");
-            close(client_fd);
-            free(data);
+        pthread_t th;
+        if (pthread_create(&th, NULL, handle_req, d) != 0) {
+            log_error("Failed to create thread");
+            close(cfd);
+            free(d);
         } else {
-            pthread_detach(thread);
+            pthread_detach(th);
         }
     }
 
-    log_info("Servidor encerrado com segurança.");
+    log_info("Server shut down safely.");
 }
