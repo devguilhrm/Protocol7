@@ -1,0 +1,17 @@
+# Binários
+/servidor
+/test_runner
+/obj/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+
+# Temporários
+*.tmp
